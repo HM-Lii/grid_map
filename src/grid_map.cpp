@@ -48,10 +48,6 @@ class GridMap {
       grid_map_[i] = -1;
     }
     // 将栅格地图中所有栅格状态设置为灰色
-    // 设置激光雷达参数
-    scan_angle_min_ = -M_PI / 6;  // 扫描角度最小值，单位：度
-    scan_angle_max_ = M_PI / 6;   // 扫描角度最大值，单位：度
-    scan_range_ = 40;             // 扫描距离，单位：米
   }
   ~GridMap() {
     // 清理动态分配的数组
@@ -203,9 +199,6 @@ class GridMap {
   ros::Publisher occupancy_grid_pub_;
   int pointCloudCount = 0;
   PointCloud::Ptr cloud;  // 用于合并两次点云的变量
-  double scan_angle_min_;
-  double scan_angle_max_;
-  double scan_range_;
 };
 
 int main(int argc, char** argv) {
