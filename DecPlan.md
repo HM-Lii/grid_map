@@ -11,9 +11,10 @@ gantt
 	section gecao_navigation包开发测试
 		主函数调整 :after a1,1d
 		规划基类进抽象并debugA* :after a1,2d
-		推送正式版0.9 :1d
+		推送正式版0.9 :b1,2023-12-25,1d
 		实车测试 :1d
 		修改正式版1.0 :2d
+		动态规划代码开发 :after b1,3d
 		
 	
 ```
