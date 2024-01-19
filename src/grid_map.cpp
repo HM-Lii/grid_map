@@ -53,7 +53,9 @@ class GridMap {
     *cloud += *msg;
     // 增加计数器
     pointCloudCount++;
+    cout<<"receive one pointcloud"<<endl;
     if (pointCloudCount == 2) {
+      cout<<"received two pointcloud,start process"<<endl;
       // 高度滤波
       pcl::PassThrough<pcl::PointXYZ> pass;
       pass.setInputCloud(cloud);
@@ -69,6 +71,7 @@ class GridMap {
         ROS_ERROR("%s", ex.what());
         return;
       }
+      cout<<"pass the try,seems no error"<<endl;
       double center_x_ =
           (transform.getOrigin().getX() + map_width_ / 2) / resolution_;
       double center_y_ =
