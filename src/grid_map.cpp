@@ -71,7 +71,7 @@ class GridMap {
         ROS_ERROR("%s", ex.what());
         return;
       }
-      cout<<"pass the try,seems no error"<<endl;
+      ROS_INFO("pass the try,seems no error");
       double center_x_ =
           (transform.getOrigin().getX() + map_width_ / 2) / resolution_;
       double center_y_ =
