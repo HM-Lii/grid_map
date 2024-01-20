@@ -53,9 +53,7 @@ class GridMap {
     *cloud += *msg;
     // 增加计数器
     pointCloudCount++;
-    ROS_INFO("receive one pointcloud");
     if (pointCloudCount == 2) {
-      ROS_INFO("received two pointcloud,start process");
       // 高度滤波
       pcl::PassThrough<pcl::PointXYZ> pass;
       pass.setInputCloud(cloud);
@@ -71,15 +69,11 @@ class GridMap {
         ROS_ERROR("lookupTransform meet error:%s", ex.what());
         return;
       }
-      ROS_INFO(
-          "transform.getOrigin().getX():%f ; transform.getOrigin().getY():%f",
-          transform.getOrigin().getX(), transform.getOrigin().getY());
       double center_x_ =
           (transform.getOrigin().getX() + map_width_ / 2) / resolution_;
       double center_y_ =
           (transform.getOrigin().getY() + map_height_ / 2) / resolution_;
       double center_z_ = transform.getOrigin().getZ() / resolution_;  // 增加z轴的处理
-      ROS_INFO("start for loop");
       for (const auto& point : cloud->points) {
         // 计算点所在的栅格坐标
         int grid_x = (point.x + map_width_ / 2) / resolution_;
@@ -100,49 +94,44 @@ class GridMap {
           // 使用 Bresenham 算法计算从该点到射线终点之间的所有栅格
           int dx = abs(end_x - start_x);
           int dy = abs(end_y - start_y);
-          int dz = abs(end_z - start_z);  // 增加z轴的处理
-          int xs = (start_x < end_x) ? 1 : -1;
-          int ys = (start_y < end_y) ? 1 : -1;
-          int zs = (start_z < end_z) ? 1 : -1;  // 增加z轴的处理
-          int err_xy = dx - dy;
-          int err_xz = dx - dz;  // 增加z轴的处理
-          ROS_INFO("start to while loop");
+          int dz = abs(end_z - start_z);
+          int sx = (start_x < end_x) ? 1 : -1;
+          int sy = (start_y < end_y) ? 1 : -1;
+          int sz = (start_z < end_z) ? 1 : -1;
+          int err = dx - dy - dz;
+          int e2;
+
           while (true) {
             if (start_x == end_x && start_y == end_y &&
-                start_z == end_z) {  // 增加z轴的处理
+                start_z == end_z) {  
               break;
             }
+
+            e2 = 2 * err;
+            if (e2 > -dy) {
+              err -= dy;
+              start_x += sx;
+            }
+            if (e2 < dx) {
+              err += dx;
+              start_y += sy;
+            }
+            if (e2 > -dz) {
+              err -= dz;
+              start_z += sz;
+            }            
             // 检查当前栅格是否在地图范围内
             if (start_x >= 0 && start_x < grid_width_ && start_y >= 0 &&
-                start_y < grid_height_) {  // 增加z轴的处理
-              int index = start_y * grid_width_ + start_x;  // 增加z轴的处理
+                start_y < grid_height_&& start_z >= 0 && start_z < grid_depth_) {  
+              int index = start_y * grid_width_ + start_x;  
               grid_map_[index][start_z] -= 1;
               if (grid_map_[index][start_z] < 0) {
                 grid_map_[index][start_z] = 0;
               }
             }
-            int e2_xy = 2 * err_xy;
-            int e2_xz = 2 * err_xz;            // 增加z轴的处理
-            if (e2_xy > -dy && e2_xz > -dz) {  // 增加z轴的处理
-              err_xy -= dy;
-              err_xz -= dz;  // 增加z轴的处理
-              start_x += xs;
-            }
-            if (e2_xy < dx && e2_xz > -dz) {  // 增加z轴的处理
-              err_xy += dx;
-              err_xz -= dz;  // 增加z轴的处理
-              start_y += ys;
-            }
-            if (e2_xz < dx && e2_xy > -dy) {  // 增加z轴的处理
-              err_xz += dx;
-              err_xy -= dy;   // 增加z轴的处理
-              start_z += zs;  // 增加z轴的处理
-            }
-            ROS_INFO("start_x:%d ; start_y:%d ; start_z:%d", start_x, start_y,
-                     start_z);
           }
           //增加占据可能性
-          int index = grid_y * grid_width_ + grid_x;  // 增加z轴的处理
+          int index = grid_y * grid_width_ + grid_x;  
           grid_map_[index][grid_z] += 1;
           if (grid_map_[index][grid_z] < 0) {
             grid_map_[index][grid_z] = 0;
@@ -151,7 +140,6 @@ class GridMap {
           }
         }
       }
-      ROS_INFO("finish for loop");
       nav_msgs::OccupancyGrid occupancy_grid;
       occupancy_grid.header.frame_id = "camera_init";
       occupancy_grid.info.width = grid_width_;
@@ -160,7 +148,6 @@ class GridMap {
       occupancy_grid.info.origin.position.x = -map_width_ * orgin_x;
       occupancy_grid.info.origin.position.y = -map_height_ * orgin_y;
 
-      ROS_INFO("start to transform grid_map to OccupancyGrid");
       // 将grid_map_中的栅格状态转换为OccupancyGrid数据
       occupancy_grid.data.resize(grid_width_ * grid_height_, -1);
       for (int i = 0; i < grid_width_ * grid_height_; ++i) {
@@ -181,7 +168,6 @@ class GridMap {
           occupancy_grid.data[i] = 0;  // 未占用栅格
         }
       }
-      ROS_INFO("finish transform grid_map to OccupancyGrid");
       // 发布OccupancyGrid消息
       occupancy_grid_pub_.publish(occupancy_grid);
       cloud->clear();
