@@ -1,4 +1,3 @@
-#include <geometry_msgs/Point.h>
 #include <nav_msgs/OccupancyGrid.h>
 #include <pcl/filters/passthrough.h>
 #include <pcl/filters/radius_outlier_removal.h>
@@ -8,11 +7,12 @@
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <tf/transform_listener.h>
-#include <vector>
-
 typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
 using namespace std;
-
+struct Point {
+  int x;
+  int y;
+};
 class GridMap {
  public:
   GridMap() : nh_("~") {
@@ -41,50 +41,108 @@ class GridMap {
 
     grid_width_ = map_width_ / resolution_;  // 栅格地图宽度，单位：栅格
     grid_height_ = map_height_ / resolution_;  // 栅格地图高度，单位：栅格
-    grid_depth_ =
-        (thre_z_max - thre_z_min) / resolution_;  // 栅格地图深度，单位：栅格
+
     // 初始化栅格地图
-    grid_map_.resize(grid_width_ * grid_height_, vector<int>(grid_depth_, -1));
+    grid_map_ = new int16_t[grid_width_ * grid_height_];
+    for (int i = 0; i < grid_width_ * grid_height_; ++i) {
+      grid_map_[i] = -1;
+    }
     // 将栅格地图中所有栅格状态设置为灰色
   }
-  ~GridMap() {}
+  ~GridMap() {
+    // 清理动态分配的数组
+    delete[] grid_map_;
+  }
   void pointcloudCallback(const PointCloud::ConstPtr& msg) {
     // 获取点云
     *cloud += *msg;
-    // 增加计数器
     pointCloudCount++;
-    if (pointCloudCount == 2) {
+    if (pointCloudCount == 5) {
       // 高度滤波
       pcl::PassThrough<pcl::PointXYZ> pass;
       pass.setInputCloud(cloud);
       pass.setFilterFieldName("z");
       pass.setFilterLimits(thre_z_min, thre_z_max);
       pass.filter(*cloud);
+
+      // 半径滤波
+      //创建滤波器
+      pcl::RadiusOutlierRemoval<pcl::PointXYZ> radiusoutlier;
+      //设置输入点云
+      radiusoutlier.setInputCloud(cloud);
+      //设置半径,在该范围内找临近点
+      radiusoutlier.setRadiusSearch(filter_radius);
+      //设置查询点的邻域点集数，小于该阈值的删除
+      radiusoutlier.setMinNeighborsInRadius(filter_num);
+      radiusoutlier.filter(*cloud);
       // 获取tf变换
       tf::StampedTransform transform;
       try {
         listener_.lookupTransform("camera_init", "body", ros::Time(0),
                                   transform);
       } catch (tf::TransformException ex) {
-        ROS_ERROR("lookupTransform meet error:%s", ex.what());
+        ROS_ERROR("%s", ex.what());
         return;
       }
       double center_x_ =
           (transform.getOrigin().getX() + map_width_ / 2) / resolution_;
       double center_y_ =
           (transform.getOrigin().getY() + map_height_ / 2) / resolution_;
-      double center_z_ =
-          transform.getOrigin().getZ() / resolution_;  // 增加z轴的处理
+
+      // 遍历点云中的每个点
       for (const auto& point : cloud->points) {
         // 计算点所在的栅格坐标
         int grid_x = (point.x + map_width_ / 2) / resolution_;
         int grid_y = (point.y + map_height_ / 2) / resolution_;
-        int grid_z = point.z / resolution_;  // 增加z轴的处理
 
         // 判断栅格坐标是否在地图范围内
         if (grid_x >= 0 && grid_x < grid_width_ && grid_y >= 0 &&
-            grid_y < grid_height_) {  // 增加z轴的处理
-          bresenham3D(center_x_, center_y_, center_z_, grid_x, grid_y, grid_z);
+            grid_y < grid_height_) {
+          int start_x = center_x_;
+          int start_y = center_y_;
+
+          int end_x = grid_x;
+          int end_y = grid_y;
+          // 使用 Bresenham算法计算从该点到射线终点之间的所有栅格
+          int dx = abs(end_x - start_x);
+          int dy = abs(end_y - start_y);
+          int sx = (start_x < end_x) ? 1 : -1;
+          int sy = (start_y < end_y) ? 1 : -1;
+          int err = dx - dy;
+
+          while (true) {
+            if (start_x == end_x && start_y == end_y) {
+              break;
+            }
+            //防止把终点的栅格设置为空闲
+            // 检查当前栅格是否在地图范围内
+            if (start_x >= 0 && start_x < grid_width_ && start_y >= 0 &&
+                start_y < grid_height_) {
+              int index = start_y * grid_width_ + start_x;
+              grid_map_[index] -= 1;
+              // 减小占据可能性
+              if (grid_map_[index] < 0) {
+                grid_map_[index] = 0;
+              }
+            }
+            int e2 = 2 * err;
+            if (e2 > -dy) {
+              err -= dy;
+              start_x += sx;
+            }
+            if (e2 < dx) {
+              err += dx;
+              start_y += sy;
+            }
+          }
+          //增加占据可能性
+          int index = grid_y * grid_width_ + grid_x;
+          grid_map_[index] += 1;
+          if (grid_map_[index] < 0) {
+            grid_map_[index] = 0;
+          } else if (grid_map_[index] > 9) {
+            grid_map_[index] = 10;
+          }
         }
       }
       nav_msgs::OccupancyGrid occupancy_grid;
@@ -98,111 +156,20 @@ class GridMap {
       // 将grid_map_中的栅格状态转换为OccupancyGrid数据
       occupancy_grid.data.resize(grid_width_ * grid_height_, -1);
       for (int i = 0; i < grid_width_ * grid_height_; ++i) {
-        bool if_occ = false;
-        for (auto grid : grid_map_[i]) {
-          if (grid > -1) {
-            if (grid < 4) {
-            } else if (grid < 11) {
-              occupancy_grid.data[i] = 100;  // 占用栅格
-              if_occ = true;
-              break;
-            } else {
-              cout << "error,gridmap:" << grid << endl;
-            }
+        if (grid_map_[i] > -1) {
+          if (grid_map_[i] < 4) {
+            occupancy_grid.data[i] = 0;  // 无障碍栅格
+          } else if (grid_map_[i] < 11) {
+            occupancy_grid.data[i] = 100;  // 占用栅格
+          } else {
+            cout << "error,gridmap:" << grid_map_[i] << endl;
           }
-        }
-        if (!if_occ) {
-          occupancy_grid.data[i] = 0;  // 未占用栅格
         }
       }
       // 发布OccupancyGrid消息
       occupancy_grid_pub_.publish(occupancy_grid);
       cloud->clear();
       pointCloudCount = 0;
-    }
-  }
-  void bresenham3D(int x1, int y1, int z1, int x2, int y2, int z2) {
-    int dx = abs(x2 - x1);
-    int dy = abs(y2 - y1);
-    int dz = abs(z2 - z1);
-
-    int xs = (x2 - x1) > 0 ? 1 : -1;
-    int ys = (y2 - y1) > 0 ? 1 : -1;
-    int zs = (z2 - z1) > 0 ? 1 : -1;
-
-    if (dx >= dy && dx >= dz) {
-      int p1 = 2 * dy - dx;
-      int p2 = 2 * dz - dx;
-      while (x1 != x2) {
-        x1 += xs;
-        if (p1 >= 0) {
-          y1 += ys;
-          p1 -= 2 * dx;
-        }
-        if (p2 >= 0) {
-          z1 += zs;
-          p2 -= 2 * dx;
-        }
-        p1 += 2 * dy;
-        p2 += 2 * dz;
-        declineProbability(x1, y1, z1);
-      }
-    } else if (dy >= dx && dy >= dz) {
-      int p1 = 2 * dx - dy;
-      int p2 = 2 * dz - dy;
-      while (y1 != y2) {
-        y1 += ys;
-        if (p1 >= 0) {
-          x1 += xs;
-          p1 -= 2 * dy;
-        }
-        if (p2 >= 0) {
-          z1 += zs;
-          p2 -= 2 * dy;
-        }
-        p1 += 2 * dx;
-        p2 += 2 * dz;
-        declineProbability(x1, y1, z1);
-      }
-    } else {
-      int p1 = 2 * dy - dz;
-      int p2 = 2 * dx - dz;
-      while (z1 != z2) {
-        z1 += zs;
-        if (p1 >= 0) {
-          y1 += ys;
-          p1 -= 2 * dz;
-        }
-        if (p2 >= 0) {
-          x1 += xs;
-          p2 -= 2 * dz;
-        }
-        p1 += 2 * dy;
-        p2 += 2 * dx;
-        declineProbability(x1, y1, z1);
-      }
-    }
-    increaseProbability(x2, y2, z2);
-  }
-  void declineProbability(int x, int y, int z) {
-    if (x >= 0 && x < grid_width_ && y >= 0 && y < grid_height_ &&
-        z >= thre_z_min / resolution_ && z < thre_z_max / resolution_) {
-      int index = y * grid_width_ + x;
-      z -= thre_z_min / resolution_;
-      grid_map_[index][z] -= 1;
-      if (grid_map_[index][z] < 0) {
-        grid_map_[index][z] = 0;
-      }
-    }
-  }
-  void increaseProbability(int x, int y, int z) {
-    int index = y * grid_width_ + x;
-    z -= thre_z_min / resolution_;
-    grid_map_[index][z] += 1;
-    if (grid_map_[index][z] < 0) {
-      grid_map_[index][z] = 0;
-    } else if (grid_map_[index][z] > 9) {
-      grid_map_[index][z] = 10;
     }
   }
 
@@ -225,8 +192,7 @@ class GridMap {
   double orgin_y;
   int grid_width_;
   int grid_height_;
-  int grid_depth_;
-  vector<vector<int> > grid_map_;
+  int16_t* grid_map_;
   ros::Publisher occupancy_grid_pub_;
   int pointCloudCount = 0;
   PointCloud::Ptr cloud;  // 用于合并两次点云的变量
