@@ -1,4 +1,3 @@
-#include <geometry_msgs/Point.h>
 #include <nav_msgs/OccupancyGrid.h>
 #include <pcl/filters/passthrough.h>
 #include <pcl/filters/radius_outlier_removal.h>
@@ -8,11 +7,12 @@
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <tf/transform_listener.h>
-#include <vector>
-
 typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
 using namespace std;
-
+struct Point {
+  int x;
+  int y;
+};
 class GridMap {
  public:
   GridMap() : nh_("~") {
@@ -41,25 +41,40 @@ class GridMap {
 
     grid_width_ = map_width_ / resolution_;  // 栅格地图宽度，单位：栅格
     grid_height_ = map_height_ / resolution_;  // 栅格地图高度，单位：栅格
-    grid_depth_ =
-        (thre_z_max - thre_z_min) / resolution_;  // 栅格地图深度，单位：栅格
+
     // 初始化栅格地图
-    grid_map_.resize(grid_width_ * grid_height_, vector<int>(grid_depth_, -1));
+    grid_map_ = new int16_t[grid_width_ * grid_height_];
+    for (int i = 0; i < grid_width_ * grid_height_; ++i) {
+      grid_map_[i] = -1;
+    }
     // 将栅格地图中所有栅格状态设置为灰色
   }
-  ~GridMap() {}
+  ~GridMap() {
+    // 清理动态分配的数组
+    delete[] grid_map_;
+  }
   void pointcloudCallback(const PointCloud::ConstPtr& msg) {
     // 获取点云
     *cloud += *msg;
-    // 增加计数器
     pointCloudCount++;
-    if (pointCloudCount == 2) {
+    if (pointCloudCount == 5) {
       // 高度滤波
       pcl::PassThrough<pcl::PointXYZ> pass;
       pass.setInputCloud(cloud);
       pass.setFilterFieldName("z");
       pass.setFilterLimits(thre_z_min, thre_z_max);
       pass.filter(*cloud);
+
+      // 半径滤波
+      //创建滤波器
+      pcl::RadiusOutlierRemoval<pcl::PointXYZ> radiusoutlier;
+      //设置输入点云
+      radiusoutlier.setInputCloud(cloud);
+      //设置半径,在该范围内找临近点
+      radiusoutlier.setRadiusSearch(filter_radius);
+      //设置查询点的邻域点集数，小于该阈值的删除
+      radiusoutlier.setMinNeighborsInRadius(filter_num);
+      radiusoutlier.filter(*cloud);
       // 获取tf变换
       tf::StampedTransform transform;
       try {
@@ -73,76 +88,63 @@ class GridMap {
           (transform.getOrigin().getX() + map_width_ / 2) / resolution_;
       double center_y_ =
           (transform.getOrigin().getY() + map_height_ / 2) / resolution_;
-      double center_z_ = -thre_z_min / resolution_;  // 增加z轴的处理
+
       // 将点从车体坐标系转换为地图坐标系
       pcl_ros::transformPointCloud("camera_init", *cloud, *cloud, listener_);
 
+      // 遍历点云中的每个点
       for (const auto& point : cloud->points) {
         // 计算点所在的栅格坐标
         int grid_x = (point.x + map_width_ / 2) / resolution_;
         int grid_y = (point.y + map_height_ / 2) / resolution_;
-        int grid_z = (point.z - thre_z_min) / resolution_;  // 增加z轴的处理
 
         // 判断栅格坐标是否在地图范围内
         if (grid_x >= 0 && grid_x < grid_width_ && grid_y >= 0 &&
-            grid_y < grid_height_) {  // 增加z轴的处理
+            grid_y < grid_height_) {
           int start_x = center_x_;
           int start_y = center_y_;
-          int start_z = center_z_;  // 增加z轴的处理
 
           int end_x = grid_x;
           int end_y = grid_y;
-          int end_z = grid_z;  // 增加z轴的处理
-
-          // 使用 Bresenham 算法计算从该点到射线终点之间的所有栅格
+          // 使用 Bresenham算法计算从该点到射线终点之间的所有栅格
           int dx = abs(end_x - start_x);
           int dy = abs(end_y - start_y);
-          int dz = abs(end_z - start_z);  // 增加z轴的处理
-          int xs = (start_x < end_x) ? 1 : -1;
-          int ys = (start_y < end_y) ? 1 : -1;
-          int zs = (start_z < end_z) ? 1 : -1;  // 增加z轴的处理
-          int err_xy = dx - dy;
-          int err_xz = dx - dz;  // 增加z轴的处理
+          int sx = (start_x < end_x) ? 1 : -1;
+          int sy = (start_y < end_y) ? 1 : -1;
+          int err = dx - dy;
 
           while (true) {
-            if (start_x == end_x && start_y == end_y &&
-                start_z == end_z) {  // 增加z轴的处理
+            if (start_x == end_x && start_y == end_y) {
               break;
             }
+            //防止把终点的栅格设置为空闲
             // 检查当前栅格是否在地图范围内
             if (start_x >= 0 && start_x < grid_width_ && start_y >= 0 &&
-                start_y < grid_height_) {  // 增加z轴的处理
-              int index = start_y * grid_width_ + start_x;  // 增加z轴的处理
-              grid_map_[index][start_z] -= 1;
-              if (grid_map_[index][start_z] < 0) {
-                grid_map_[index][start_z] = 0;
+                start_y < grid_height_) {
+              int index = start_y * grid_width_ + start_x;
+              grid_map_[index] -= 1;
+              // 减小占据可能性
+              if (grid_map_[index] < 0) {
+                grid_map_[index] = 0;
               }
             }
-            int e2_xy = 2 * err_xy;
-            int e2_xz = 2 * err_xz;            // 增加z轴的处理
-            if (e2_xy > -dy && e2_xz > -dz) {  // 增加z轴的处理
-              err_xy -= dy;
-              err_xz -= dz;  // 增加z轴的处理
-              start_x += xs;
+            int e2 = 2 * err;
+            if (e2 > -dy) {
+              err -= dy;
+              start_x += sx;
             }
-            if (e2_xy < dx && e2_xz > -dz) {  // 增加z轴的处理
-              err_xy += dx;
-              err_xz -= dz;  // 增加z轴的处理
-              start_y += ys;
-            }
-            if (e2_xz < dx && e2_xy > -dy) {  // 增加z轴的处理
-              err_xz += dx;
-              err_xy -= dy;   // 增加z轴的处理
-              start_z += zs;  // 增加z轴的处理
+            if (e2 < dx) {
+              err += dx;
+              start_y += sy;
             }
           }
           //增加占据可能性
-          int index = grid_y * grid_width_ + grid_x;  // 增加z轴的处理
-          grid_map_[index][grid_z] += 1;
-          if (grid_map_[index][grid_z] < 0) {
-            grid_map_[index][grid_z] = 0;
-          } else if (grid_map_[index][grid_z] > 9) {
-            grid_map_[index][grid_z] = 10;
+          int index = grid_y * grid_width_ + grid_x;
+          grid_map_[index] += 1;
+          if (grid_map_[index] < 0) {
+            grid_map_[index] = 0;
+          } else if (grid_map_[index] > 9) {
+            grid_map_[index] = 10;
           }
         }
       }
@@ -157,21 +159,14 @@ class GridMap {
       // 将grid_map_中的栅格状态转换为OccupancyGrid数据
       occupancy_grid.data.resize(grid_width_ * grid_height_, -1);
       for (int i = 0; i < grid_width_ * grid_height_; ++i) {
-        bool if_occ = false;
-        for (auto grid : grid_map_[i]) {
-          if (grid > -1) {
-            if (grid < 4) {
-            } else if (grid < 11) {
-              occupancy_grid.data[i] = 100;  // 占用栅格
-              if_occ = true;
-              break;
-            } else {
-              cout << "error,gridmap:" << grid << endl;
-            }
+        if (grid_map_[i] > -1) {
+          if (grid_map_[i] < 4) {
+            occupancy_grid.data[i] = 0;  // 无障碍栅格
+          } else if (grid_map_[i] < 11) {
+            occupancy_grid.data[i] = 100;  // 占用栅格
+          } else {
+            cout << "error,gridmap:" << grid_map_[i] << endl;
           }
-        }
-        if (!if_occ) {
-          occupancy_grid.data[i] = 0;  // 未占用栅格
         }
       }
       // 发布OccupancyGrid消息
@@ -200,8 +195,7 @@ class GridMap {
   double orgin_y;
   int grid_width_;
   int grid_height_;
-  int grid_depth_;
-  vector<vector<int> > grid_map_;
+  int16_t* grid_map_;
   ros::Publisher occupancy_grid_pub_;
   int pointCloudCount = 0;
   PointCloud::Ptr cloud;  // 用于合并两次点云的变量
