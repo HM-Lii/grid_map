@@ -29,7 +29,7 @@ class GridMap {
     nh_.param("/grid_map/thre_z_min", thre_z_min, -0.2);
     nh_.param("/grid_map/thre_z_max", thre_z_max, 1.0);
     nh_.param("/grid_map/filter_radius", filter_radius, 0.5);
-    nh_.param("/grid_map/map_filter_num", filter_num, 3);
+    nh_.param("/grid_map/filter_num", filter_num, 3);
     nh_.param("/grid_map/map_resolution", resolution_, 0.05);
     nh_.param("/grid_map/orgin_x", orgin_x, 0.5);
     nh_.param("/grid_map/orgin_y", orgin_y, 0.5);
@@ -51,70 +51,74 @@ class GridMap {
   void pointcloudCallback(const PointCloud::ConstPtr& msg) {
     // 获取点云
     *cloud += *msg;
+    // 增加计数器
     pointCloudCount++;
-    // 高度滤波
-    pcl::PassThrough<pcl::PointXYZ> pass;
-    pass.setInputCloud(cloud);
-    pass.setFilterFieldName("z");
-    pass.setFilterLimits(thre_z_min, thre_z_max);
-    pass.filter(*cloud);
-    // 获取tf变换
-    tf::StampedTransform transform;
-    try {
-      listener_.lookupTransform("camera_init", "body", ros::Time(0), transform);
-    } catch (tf::TransformException ex) {
-      ROS_ERROR("lookupTransform meet error:%s", ex.what());
-      return;
-    }
-    double center_x_ =
-        (transform.getOrigin().getX() + map_width_ / 2) / resolution_;
-    double center_y_ =
-        (transform.getOrigin().getY() + map_height_ / 2) / resolution_;
-    double center_z_ =
-        transform.getOrigin().getZ() / resolution_;  // 增加z轴的处理
-    for (const auto& point : cloud->points) {
-      // 计算点所在的栅格坐标
-      int grid_x = (point.x + map_width_ / 2) / resolution_;
-      int grid_y = (point.y + map_height_ / 2) / resolution_;
-      int grid_z = point.z / resolution_;  // 增加z轴的处理
-
-      // 判断栅格坐标是否在地图范围内
-      if (grid_x >= 0 && grid_x < grid_width_ && grid_y >= 0 &&
-          grid_y < grid_height_) {  // 增加z轴的处理
-        bresenham3D(center_x_, center_y_, center_z_, grid_x, grid_y, grid_z);
+    if (pointCloudCount == filter_num) {
+      // 高度滤波
+      pcl::PassThrough<pcl::PointXYZ> pass;
+      pass.setInputCloud(cloud);
+      pass.setFilterFieldName("z");
+      pass.setFilterLimits(thre_z_min, thre_z_max);
+      pass.filter(*cloud);
+      // 获取tf变换
+      tf::StampedTransform transform;
+      try {
+        listener_.lookupTransform("camera_init", "body", ros::Time(0),
+                                  transform);
+      } catch (tf::TransformException ex) {
+        ROS_ERROR("lookupTransform meet error:%s", ex.what());
+        return;
       }
-      cloud->clear();
-      if (pointCloudCount == filter_num) {
-        nav_msgs::OccupancyGrid occupancy_grid;
-        occupancy_grid.header.frame_id = "camera_init";
-        occupancy_grid.info.width = grid_width_;
-        occupancy_grid.info.height = grid_height_;
-        occupancy_grid.info.resolution = resolution_;
-        occupancy_grid.info.origin.position.x = -map_width_ * orgin_x;
-        occupancy_grid.info.origin.position.y = -map_height_ * orgin_y;
+      double center_x_ =
+          (transform.getOrigin().getX() + map_width_ / 2) / resolution_;
+      double center_y_ =
+          (transform.getOrigin().getY() + map_height_ / 2) / resolution_;
+      double center_z_ =
+          transform.getOrigin().getZ() / resolution_;  // 增加z轴的处理
+      for (const auto& point : cloud->points) {
+        // 计算点所在的栅格坐标
+        int grid_x = (point.x + map_width_ / 2) / resolution_;
+        int grid_y = (point.y + map_height_ / 2) / resolution_;
+        int grid_z = point.z / resolution_;  // 增加z轴的处理
 
-        // 将grid_map_中的栅格状态转换为OccupancyGrid数据
-        occupancy_grid.data.resize(grid_width_ * grid_height_, -1);
-        for (int i = 0; i < grid_width_ * grid_height_; ++i) {
-          for (auto grid : grid_map_[i]) {
-            bool first = true;
-            if (grid > -1) {
-              if (grid < 4 && first) {
-                occupancy_grid.data[i] = 0;  // 未占用栅格
-                first = false;
-              } else if (grid < 11) {
-                occupancy_grid.data[i] = 100;  // 占用栅格
-                break;
-              } else {
-                cout << "error,gridmap:" << grid << endl;
-              }
+        // 判断栅格坐标是否在地图范围内
+        if (grid_x >= 0 && grid_x < grid_width_ && grid_y >= 0 &&
+            grid_y < grid_height_) {  // 增加z轴的处理
+          bresenham3D(center_x_, center_y_, center_z_, grid_x, grid_y, grid_z);
+        }
+      }
+      nav_msgs::OccupancyGrid occupancy_grid;
+      occupancy_grid.header.frame_id = "camera_init";
+      occupancy_grid.info.width = grid_width_;
+      occupancy_grid.info.height = grid_height_;
+      occupancy_grid.info.resolution = resolution_;
+      occupancy_grid.info.origin.position.x = -map_width_ * orgin_x;
+      occupancy_grid.info.origin.position.y = -map_height_ * orgin_y;
+
+      // 将grid_map_中的栅格状态转换为OccupancyGrid数据
+      occupancy_grid.data.resize(grid_width_ * grid_height_, -1);
+      for (int i = 0; i < grid_width_ * grid_height_; ++i) {
+        for (auto grid : grid_map_[i]) {
+          bool first=true;
+          if (grid > -1) {          
+            if (grid < 4&&first) {
+              occupancy_grid.data[i] = 0;  // 未占用栅格
+              first=false;
+            } 
+            else if (grid < 11) {
+              occupancy_grid.data[i] = 100;  // 占用栅格
+              break;
+            } 
+            else {
+              cout << "error,gridmap:" << grid << endl;
             }
           }
-        }
-        // 发布OccupancyGrid消息
-        occupancy_grid_pub_.publish(occupancy_grid);
-        pointCloudCount = 0;
+        }       
       }
+      // 发布OccupancyGrid消息
+      occupancy_grid_pub_.publish(occupancy_grid);
+      cloud->clear();
+      pointCloudCount = 0;
     }
   }
   void bresenham3D(int x1, int y1, int z1, int x2, int y2, int z2) {
