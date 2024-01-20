@@ -100,10 +100,15 @@ class GridMap {
           int sz = (start_z < end_z) ? 1 : -1;
           int err = dx - dy - dz;
           int e2;
-
-          while (true) {
-            if (start_x == end_x && start_y == end_y &&
-                start_z == end_z) {  
+          ROS_INFO("start while loop");
+          int count = 0;
+          while (true) {            
+            count++;
+            if(count==10){
+              count = 0;
+              ROS_INFO("start_x:%d,start_y:%d,start_z:%d",start_x,start_y,start_z);
+            }
+            if (start_x == end_x && start_y == end_y && start_z == end_z) {
               break;
             }
 
@@ -119,17 +124,20 @@ class GridMap {
             if (e2 > -dz) {
               err -= dz;
               start_z += sz;
-            }            
+            }
             // 检查当前栅格是否在地图范围内
             if (start_x >= 0 && start_x < grid_width_ && start_y >= 0 &&
-                start_y < grid_height_&& start_z >= 0 && start_z < grid_depth_) {  
-              int index = start_y * grid_width_ + start_x;  
+                start_y < grid_height_ && start_z >= 0 &&
+                start_z < grid_depth_) {
+              int index = start_y * grid_width_ + start_x;
               grid_map_[index][start_z] -= 1;
               if (grid_map_[index][start_z] < 0) {
                 grid_map_[index][start_z] = 0;
               }
             }
           }
+          ROS_INFO("end while loop");
+
           //增加占据可能性
           int index = grid_y * grid_width_ + grid_x;  
           grid_map_[index][grid_z] += 1;
