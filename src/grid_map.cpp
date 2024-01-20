@@ -72,18 +72,14 @@ class GridMap {
         return;
       }
       ROS_INFO("pass the try,seems no error");
+      ROS_INFO("transform.getOrigin().getX():%f", transform.getOrigin().getX());
+      ROS_INFO("transform.getOrigin().getY():%f", transform.getOrigin().getY());
+
       double center_x_ =
           (transform.getOrigin().getX() + map_width_ / 2) / resolution_;
       double center_y_ =
           (transform.getOrigin().getY() + map_height_ / 2) / resolution_;
       double center_z_ = -thre_z_min / resolution_;  // 增加z轴的处理
-      // 将点从车体坐标系转换为地图坐标系
-      try {
-        pcl_ros::transformPointCloud("camera_init", *cloud, *cloud, listener_);
-      } catch (tf::TransformException& ex) {
-        ROS_ERROR("transformPointCloud meet error:%s", ex.what());
-        return;
-      }
       ROS_INFO("start for loop");
       for (const auto& point : cloud->points) {
         // 计算点所在的栅格坐标
