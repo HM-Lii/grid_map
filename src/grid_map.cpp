@@ -53,9 +53,9 @@ class GridMap {
     *cloud += *msg;
     // 增加计数器
     pointCloudCount++;
-    cout<<"receive one pointcloud"<<endl;
+    ROS_INFO("receive one pointcloud");
     if (pointCloudCount == 2) {
-      cout<<"received two pointcloud,start process"<<endl;
+      ROS_INFO("received two pointcloud,start process");
       // 高度滤波
       pcl::PassThrough<pcl::PointXYZ> pass;
       pass.setInputCloud(cloud);
@@ -68,7 +68,7 @@ class GridMap {
         listener_.lookupTransform("camera_init", "body", ros::Time(0),
                                   transform);
       } catch (tf::TransformException ex) {
-        ROS_ERROR("%s", ex.what());
+        ROS_ERROR("lookupTransform meet error:%s", ex.what());
         return;
       }
       ROS_INFO("pass the try,seems no error");
@@ -78,8 +78,13 @@ class GridMap {
           (transform.getOrigin().getY() + map_height_ / 2) / resolution_;
       double center_z_ = -thre_z_min / resolution_;  // 增加z轴的处理
       // 将点从车体坐标系转换为地图坐标系
-      pcl_ros::transformPointCloud("camera_init", *cloud, *cloud, listener_);
-
+      try {
+        pcl_ros::transformPointCloud("camera_init", *cloud, *cloud, listener_);
+      } catch (tf::TransformException& ex) {
+        ROS_ERROR("transformPointCloud meet error:%s", ex.what());
+        return;
+      }
+      ROS_INFO("start for loop");
       for (const auto& point : cloud->points) {
         // 计算点所在的栅格坐标
         int grid_x = (point.x + map_width_ / 2) / resolution_;
@@ -149,6 +154,7 @@ class GridMap {
           }
         }
       }
+      ROS_INFO("finish for loop");
       nav_msgs::OccupancyGrid occupancy_grid;
       occupancy_grid.header.frame_id = "camera_init";
       occupancy_grid.info.width = grid_width_;
@@ -157,6 +163,7 @@ class GridMap {
       occupancy_grid.info.origin.position.x = -map_width_ * orgin_x;
       occupancy_grid.info.origin.position.y = -map_height_ * orgin_y;
 
+      ROS_INFO("start to transform grid_map to OccupancyGrid");
       // 将grid_map_中的栅格状态转换为OccupancyGrid数据
       occupancy_grid.data.resize(grid_width_ * grid_height_, -1);
       for (int i = 0; i < grid_width_ * grid_height_; ++i) {
@@ -177,6 +184,7 @@ class GridMap {
           occupancy_grid.data[i] = 0;  // 未占用栅格
         }
       }
+      ROS_INFO("finish transform grid_map to OccupancyGrid");
       // 发布OccupancyGrid消息
       occupancy_grid_pub_.publish(occupancy_grid);
       cloud->clear();
