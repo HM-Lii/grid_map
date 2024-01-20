@@ -71,21 +71,20 @@ class GridMap {
         ROS_ERROR("lookupTransform meet error:%s", ex.what());
         return;
       }
-      ROS_INFO("pass the try,seems no error");
-      ROS_INFO("transform.getOrigin().getX():%f", transform.getOrigin().getX());
-      ROS_INFO("transform.getOrigin().getY():%f", transform.getOrigin().getY());
-
+      ROS_INFO(
+          "transform.getOrigin().getX():%f ; transform.getOrigin().getY():%f",
+          transform.getOrigin().getX(), transform.getOrigin().getY());
       double center_x_ =
           (transform.getOrigin().getX() + map_width_ / 2) / resolution_;
       double center_y_ =
           (transform.getOrigin().getY() + map_height_ / 2) / resolution_;
-      double center_z_ = -thre_z_min / resolution_;  // 增加z轴的处理
+      double center_z_ = transform.getOrigin().getZ() / resolution_;  // 增加z轴的处理
       ROS_INFO("start for loop");
       for (const auto& point : cloud->points) {
         // 计算点所在的栅格坐标
         int grid_x = (point.x + map_width_ / 2) / resolution_;
         int grid_y = (point.y + map_height_ / 2) / resolution_;
-        int grid_z = (point.z - thre_z_min) / resolution_;  // 增加z轴的处理
+        int grid_z = point.z  / resolution_;  // 增加z轴的处理
 
         // 判断栅格坐标是否在地图范围内
         if (grid_x >= 0 && grid_x < grid_width_ && grid_y >= 0 &&
@@ -107,7 +106,7 @@ class GridMap {
           int zs = (start_z < end_z) ? 1 : -1;  // 增加z轴的处理
           int err_xy = dx - dy;
           int err_xz = dx - dz;  // 增加z轴的处理
-
+          ROS_INFO("start to while loop");
           while (true) {
             if (start_x == end_x && start_y == end_y &&
                 start_z == end_z) {  // 增加z轴的处理
@@ -139,6 +138,8 @@ class GridMap {
               err_xy -= dy;   // 增加z轴的处理
               start_z += zs;  // 增加z轴的处理
             }
+            ROS_INFO("start_x:%d ; start_y:%d ; start_z:%d", start_x, start_y,
+                     start_z);
           }
           //增加占据可能性
           int index = grid_y * grid_width_ + grid_x;  // 增加z轴的处理
