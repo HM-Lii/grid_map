@@ -104,7 +104,7 @@ class GridMap {
           int count = 0;
           while (true) {            
             count++;
-            if(count==10){
+            if(count==100){
               count = 0;
               ROS_INFO("start_x:%d,start_y:%d,start_z:%d",start_x,start_y,start_z);
             }
