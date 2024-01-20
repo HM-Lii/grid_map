@@ -12,9 +12,9 @@
 <!-- 设置半径,在该范围内找临近点-->
 <param name="filter_radius" value= "0.5" />
 <!-- 设置查询点的邻域点集数，小于该阈值的删除-->
-<param name="filter_num" value= "3" />
+<param name="filter_num" value= "10" />
 <!-- 存储的栅格map的分辨率-->
-<param name="map_resolution" value= "0.1" />
+<param name="map_resolution" value= "0.05" />
 <param name="orgin_x" value= "0.5" />
 <param name="orgin_y" value= "0.5" />
 <!-- 转换后发布的二维地图的topic，默认使用map即可，可使用map_server保存-->

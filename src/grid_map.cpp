@@ -29,7 +29,7 @@ class GridMap {
     nh_.param("/grid_map/thre_z_min", thre_z_min, -0.2);
     nh_.param("/grid_map/thre_z_max", thre_z_max, 1.0);
     nh_.param("/grid_map/filter_radius", filter_radius, 0.5);
-    nh_.param("/grid_map/filter_num", filter_num, 3);
+    nh_.param("/grid_map/map_filter_num", filter_num, 3);
     nh_.param("/grid_map/map_resolution", resolution_, 0.05);
     nh_.param("/grid_map/orgin_x", orgin_x, 0.5);
     nh_.param("/grid_map/orgin_y", orgin_y, 0.5);
@@ -84,7 +84,7 @@ class GridMap {
         bresenham3D(center_x_, center_y_, center_z_, grid_x, grid_y, grid_z);
       }
       cloud->clear();
-      if (pointCloudCount == 4) {
+      if (pointCloudCount == filter_num) {
         nav_msgs::OccupancyGrid occupancy_grid;
         occupancy_grid.header.frame_id = "camera_init";
         occupancy_grid.info.width = grid_width_;
