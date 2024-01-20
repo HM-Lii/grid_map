@@ -89,9 +89,6 @@ class GridMap {
       double center_y_ =
           (transform.getOrigin().getY() + map_height_ / 2) / resolution_;
 
-      // 将点从车体坐标系转换为地图坐标系
-      pcl_ros::transformPointCloud("camera_init", *cloud, *cloud, listener_);
-
       // 遍历点云中的每个点
       for (const auto& point : cloud->points) {
         // 计算点所在的栅格坐标
