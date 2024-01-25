@@ -8,6 +8,7 @@
 #include <ros/ros.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <tf/transform_listener.h>
+
 #include <vector>
 
 typedef pcl::PointCloud<pcl::PointXYZ> PointCloud;
@@ -54,12 +55,6 @@ class GridMap {
     // 增加计数器
     pointCloudCount++;
     if (pointCloudCount == filter_num) {
-      // 高度滤波
-      pcl::PassThrough<pcl::PointXYZ> pass;
-      pass.setInputCloud(cloud);
-      pass.setFilterFieldName("z");
-      pass.setFilterLimits(thre_z_min, thre_z_max);
-      pass.filter(*cloud);
       // 获取tf变换
       tf::StampedTransform transform;
       try {
@@ -69,11 +64,20 @@ class GridMap {
         ROS_ERROR("lookupTransform meet error:%s", ex.what());
         return;
       }
-      double center_x_ =
+      current_z_min = thre_z_min + transform.getOrigin().getZ();
+      current_z_max = thre_z_max + transform.getOrigin().getZ();
+      // 高度滤波
+      pcl::PassThrough<pcl::PointXYZ> pass;
+      pass.setInputCloud(cloud);
+      pass.setFilterFieldName("z");
+      pass.setFilterLimits(current_z_min, current_z_max);
+      pass.filter(*cloud);
+
+      int center_x_ =
           (transform.getOrigin().getX() + map_width_ / 2) / resolution_;
-      double center_y_ =
+      int center_y_ =
           (transform.getOrigin().getY() + map_height_ / 2) / resolution_;
-      double center_z_ =
+      int center_z_ =
           transform.getOrigin().getZ() / resolution_;  // 增加z轴的处理
       for (const auto& point : cloud->points) {
         // 计算点所在的栅格坐标
@@ -84,7 +88,8 @@ class GridMap {
         // 判断栅格坐标是否在地图范围内
         if (grid_x >= 0 && grid_x < grid_width_ && grid_y >= 0 &&
             grid_y < grid_height_) {  // 增加z轴的处理
-          bresenham3D(center_x_, center_y_, center_z_, grid_x, grid_y, grid_z);
+          bresenham3D(center_x_, center_y_, center_z_, grid_x, grid_y, grid_z,
+                      center_z_);
         }
       }
       nav_msgs::OccupancyGrid occupancy_grid;
@@ -99,21 +104,19 @@ class GridMap {
       occupancy_grid.data.resize(grid_width_ * grid_height_, -1);
       for (int i = 0; i < grid_width_ * grid_height_; ++i) {
         for (auto grid : grid_map_[i]) {
-          bool first=true;
-          if (grid > -1) {          
-            if (grid < 4&&first) {
+          bool first = true;
+          if (grid > -1) {
+            if (grid < 4 && first) {
               occupancy_grid.data[i] = 0;  // 未占用栅格
-              first=false;
-            } 
-            else if (grid < 11) {
+              first = false;
+            } else if (grid < 11) {
               occupancy_grid.data[i] = 100;  // 占用栅格
               break;
-            } 
-            else {
+            } else {
               cout << "error,gridmap:" << grid << endl;
             }
           }
-        }       
+        }
       }
       // 发布OccupancyGrid消息
       occupancy_grid_pub_.publish(occupancy_grid);
@@ -121,7 +124,8 @@ class GridMap {
       pointCloudCount = 0;
     }
   }
-  void bresenham3D(int x1, int y1, int z1, int x2, int y2, int z2) {
+  void bresenham3D(int x1, int y1, int z1, int x2, int y2, int z2,
+                   int center_z_) {
     int dx = abs(x2 - x1);
     int dy = abs(y2 - y1);
     int dz = abs(z2 - z1);
@@ -134,7 +138,7 @@ class GridMap {
       int p1 = 2 * dy - dx;
       int p2 = 2 * dz - dx;
       while (x1 != x2) {
-        declineProbability(x1, y1, z1);
+        declineProbability(x1, y1, z1, center_z_);
         x1 += xs;
         if (p1 >= 0) {
           y1 += ys;
@@ -145,13 +149,13 @@ class GridMap {
           p2 -= 2 * dx;
         }
         p1 += 2 * dy;
-        p2 += 2 * dz;      
+        p2 += 2 * dz;
       }
     } else if (dy >= dx && dy >= dz) {
       int p1 = 2 * dx - dy;
       int p2 = 2 * dz - dy;
       while (y1 != y2) {
-        declineProbability(x1, y1, z1);
+        declineProbability(x1, y1, z1, center_z_);
         y1 += ys;
         if (p1 >= 0) {
           x1 += xs;
@@ -168,7 +172,7 @@ class GridMap {
       int p1 = 2 * dy - dz;
       int p2 = 2 * dx - dz;
       while (z1 != z2) {
-        declineProbability(x1, y1, z1);
+        declineProbability(x1, y1, z1, center_z_);
         z1 += zs;
         if (p1 >= 0) {
           y1 += ys;
@@ -182,22 +186,28 @@ class GridMap {
         p2 += 2 * dx;
       }
     }
-    increaseProbability(x2, y2, z2);
+    increaseProbability(x2, y2, z2, center_z_);
   }
-  void declineProbability(int x, int y, int z) {
+  void declineProbability(int x, int y, int z, int center_z_) {
     if (x >= 0 && x < grid_width_ && y >= 0 && y < grid_height_ &&
-        z >= thre_z_min / resolution_ && z < thre_z_max / resolution_) {
+        z >= current_z_min / resolution_ && z < current_z_max / resolution_) {
       int index = y * grid_width_ + x;
-      z -= thre_z_min / resolution_;
+      if (grid_map_[index][grid_depth_] == -1) {
+        grid_map_[index][grid_depth_] = center_z_;
+      }
+      z -= (thre_z_min / resolution_) + grid_map_[index][grid_depth_];
       grid_map_[index][z] -= 1;
       if (grid_map_[index][z] < 0) {
         grid_map_[index][z] = 0;
       }
     }
   }
-  void increaseProbability(int x, int y, int z) {
+  void increaseProbability(int x, int y, int z, int center_z_) {
     int index = y * grid_width_ + x;
-    z -= thre_z_min / resolution_;
+    if (grid_map_[index][grid_depth_] == -1) {
+      grid_map_[index][grid_depth_] = center_z_;
+    }
+    z -= (thre_z_min / resolution_) + grid_map_[index][grid_depth_];
     grid_map_[index][z] += 1;
     if (grid_map_[index][z] < 0) {
       grid_map_[index][z] = 0;
@@ -216,6 +226,8 @@ class GridMap {
 
   double thre_z_min;
   double thre_z_max;
+  double current_z_min;
+  double current_z_max;
   double filter_radius;
   int filter_num;
   double map_width_;
