@@ -32,9 +32,10 @@ class GridMap {
     nh_.param("/grid_map/filter_radius", filter_radius, 0.5);
     nh_.param("/grid_map/filter_num", filter_num, 3);
     nh_.param("/grid_map/map_resolution", resolution_, 0.05);
-    nh_.param("/grid_map/orgin_x", orgin_x, 0.5);
-    nh_.param("/grid_map/orgin_y", orgin_y, 0.5);
-
+    nh_.param("/grid_map/offset_x", offset_x_, 5);
+    nh_.param("/grid_map/offset_y", offset_y_, 0);
+    orgin_x = 0.5;
+    orgin_y = 0.5;
     pointcloud_sub_ = nh_.subscribe(cloud_topic.c_str(), 2,
                                     &GridMap::pointcloudCallback, this);
     occupancy_grid_pub_ =
@@ -74,15 +75,15 @@ class GridMap {
       pass.filter(*cloud);
 
       int center_x_ =
-          (transform.getOrigin().getX() + map_width_ / 2) / resolution_;
+          (transform.getOrigin().getX() +offset_x_+ map_width_ / 2) / resolution_;
       int center_y_ =
-          (transform.getOrigin().getY() + map_height_ / 2) / resolution_;
+          (transform.getOrigin().getY()+offset_y_ + map_height_ / 2) / resolution_;
       int center_z_ =
           transform.getOrigin().getZ() / resolution_;  // 增加z轴的处理
       for (const auto& point : cloud->points) {
         // 计算点所在的栅格坐标
-        int grid_x = (point.x + map_width_ / 2) / resolution_;
-        int grid_y = (point.y + map_height_ / 2) / resolution_;
+        int grid_x = (point.x+offset_x_ + map_width_ / 2) / resolution_;
+        int grid_y = (point.y +offset_y_+ map_height_ / 2) / resolution_;
         int grid_z = point.z / resolution_;  // 增加z轴的处理
 
         // 判断栅格坐标是否在地图范围内
@@ -97,8 +98,8 @@ class GridMap {
       occupancy_grid.info.width = grid_width_;
       occupancy_grid.info.height = grid_height_;
       occupancy_grid.info.resolution = resolution_;
-      occupancy_grid.info.origin.position.x = -map_width_ * orgin_x;
-      occupancy_grid.info.origin.position.y = -map_height_ * orgin_y;
+      occupancy_grid.info.origin.position.x = -map_width_ * orgin_x-offset_x_;
+      occupancy_grid.info.origin.position.y = -map_height_ * orgin_y-offset_y_;
 
       // 将grid_map_中的栅格状态转换为OccupancyGrid数据
       occupancy_grid.data.resize(grid_width_ * grid_height_, -1);
@@ -238,6 +239,7 @@ class GridMap {
   int grid_width_;
   int grid_height_;
   int grid_depth_;
+  int offset_x_, offset_y_;
   vector<vector<int> > grid_map_;
   ros::Publisher occupancy_grid_pub_;
   int pointCloudCount = 0;

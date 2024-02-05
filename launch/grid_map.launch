@@ -3,8 +3,8 @@
 <node pkg="grid_map" name="grid_map" type="grid_map" output="screen">
 <!-- pcd topic-->
 <param name="cloud_topic" value= "/cloud_registered" />
-<param name="map_width" value= "100.0" />
-<param name="map_height" value= "100.0" />
+<param name="map_width" value= "20.0" />
+<param name="map_height" value= "10.0" />
 <!-- 选取的范围　最小的高度-->
 <param name="thre_z_min" value= "-0.2" />
 <!-- 选取的范围　最大的高度-->
@@ -15,8 +15,8 @@
 <param name="filter_num" value= "3" />
 <!-- 存储的栅格map的分辨率-->
 <param name="map_resolution" value= "0.05" />
-<param name="orgin_x" value= "0.5" />
-<param name="orgin_y" value= "0.5" />
+<param name="offset_x" value= "-5" />
+<param name="offset_y" value= "0" />
 <!-- 转换后发布的二维地图的topic，默认使用map即可，可使用map_server保存-->
 <param name="map_topic_name" value= "/map" />
 </node>
